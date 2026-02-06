@@ -1,3 +1,10 @@
+Here is the fully functional, single-file index.html. It meets all your constraints: zero-build, mobile-responsive, OpenRouter streaming integration, and persistent local storage.
+instructions
+ * Save the code below as index.html.
+ * Open it in any modern browser (or host on GitHub Pages).
+ * Click the Settings (Gear) icon to enter your OpenRouter API Key.
+ * Start chatting.
+<!-- end list -->
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
@@ -395,4 +402,181 @@
                                 const delta = json.choices[0].delta?.content || "";
                                 fullContent += delta;
                                 
-      
+                                // Render Markdown live (throttle this in a real massive app, ok for this)
+                                contentDiv.innerHTML = marked.parse(fullContent);
+                                contentDiv.querySelectorAll('pre code').forEach((block) => {
+                                   // Basic styling is CSS only, no JS highlighter needed for zero-build
+                                });
+                                
+                                // Scroll to bottom
+                                scrollToBottom();
+                            } catch (e) {
+                                // Ignore parse errors for partial chunks
+                            }
+                        }
+                    }
+                }
+
+                // Finalize
+                aiMsg.content = fullContent;
+                saveState();
+
+            } catch (error) {
+                console.error(error);
+                chat.messages.pop(); // Remove failed message
+                alert("Failed to fetch response: " + error.message);
+                renderChat();
+            }
+        }
+
+        // --- 5. UI RENDERING ---
+        function renderSidebar() {
+            els.chatHistory.innerHTML = '';
+            state.chats.forEach(chat => {
+                const isActive = chat.id === state.currentChatId;
+                const div = document.createElement('div');
+                div.className = `group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-colors ${
+                    isActive ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                }`;
+                div.onclick = () => switchChat(chat.id);
+                div.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <i class="fa-regular fa-message text-xs opacity-70"></i>
+                        <span class="text-sm font-medium truncate">${chat.title}</span>
+                    </div>
+                    ${isActive ? `
+                    <div class="flex gap-2 opacity-100">
+                         <button onclick="deleteChat(event, '${chat.id}')" class="w-6 h-6 flex items-center justify-center rounded hover:bg-red-200 dark:hover:bg-red-900/50 text-red-500 transition"><i class="fa-solid fa-trash text-xs"></i></button>
+                    </div>` : ''}
+                `;
+                els.chatHistory.appendChild(div);
+            });
+        }
+
+        function switchChat(id) {
+            state.currentChatId = id;
+            saveState();
+            renderSidebar();
+            renderChat();
+            if(window.innerWidth < 768) toggleSidebar();
+        }
+
+        function renderChat() {
+            const chat = getChat(state.currentChatId);
+            els.messagesList.innerHTML = '';
+            
+            if (!chat || chat.messages.length === 0) {
+                els.welcomeScreen.style.display = 'flex';
+                return;
+            } else {
+                els.welcomeScreen.style.display = 'none';
+            }
+
+            chat.messages.forEach(msg => appendMessageToDom(msg));
+            scrollToBottom();
+        }
+
+        function appendMessageToDom(msg, isStreaming = false) {
+            const isUser = msg.role === 'user';
+            const div = document.createElement('div');
+            div.id = msg.id ? `msg-${msg.id}` : '';
+            div.className = `flex gap-4 ${isUser ? 'flex-row-reverse' : ''} animate-fade-in`;
+            
+            const avatar = isUser 
+                ? `<div class="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center shrink-0"><i class="fa-solid fa-user text-slate-500"></i></div>`
+                : `<div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/30"><i class="fa-solid fa-sparkles text-white text-xs"></i></div>`;
+
+            const parsedContent = isStreaming ? '<span class="typing-cursor"></span>' : marked.parse(msg.content);
+
+            div.innerHTML = `
+                ${avatar}
+                <div class="max-w-[85%] min-w-[100px] ${isUser ? 'bg-slate-100 dark:bg-slate-800 rounded-2xl rounded-tr-sm px-4 py-2' : ''}">
+                    <div class="prose dark:prose-invert text-sm ${isUser ? '' : 'w-full'}">
+                        ${parsedContent}
+                    </div>
+                </div>
+            `;
+            els.messagesList.appendChild(div);
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('chat-container');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // --- 6. SETTINGS & MODALS ---
+        function openSettings() {
+            els.apiKeyInput.value = state.apiKey;
+            els.modelInput.value = state.model;
+            els.settingsModal.classList.remove('hidden');
+        }
+
+        function closeSettings() {
+            els.settingsModal.classList.add('hidden');
+        }
+
+        function saveSettings() {
+            state.apiKey = els.apiKeyInput.value.trim();
+            state.model = els.modelInput.value.trim() || DEFAULT_MODEL;
+            saveState();
+            els.modelDisplay.textContent = state.model;
+            closeSettings();
+        }
+
+        function openSystemPromptModal() {
+            els.systemPromptInput.value = state.systemPrompt;
+            els.systemModal.classList.remove('hidden');
+        }
+
+        function closeSystemPromptModal() {
+            els.systemModal.classList.add('hidden');
+        }
+
+        function saveSystemPrompt() {
+            state.systemPrompt = els.systemPromptInput.value.trim() || DEFAULT_SYSTEM;
+            saveState();
+            closeSystemPromptModal();
+        }
+
+        // --- 7. THEME & MOBILE SIDEBAR ---
+        function toggleTheme() {
+            state.theme = state.theme === 'dark' ? 'light' : 'dark';
+            applyTheme();
+            saveState();
+        }
+
+        function applyTheme() {
+            const html = document.documentElement;
+            const icon = els.themeIcon;
+            if (state.theme === 'dark') {
+                html.classList.add('dark');
+                icon.className = 'fa-solid fa-sun';
+            } else {
+                html.classList.remove('dark');
+                icon.className = 'fa-solid fa-moon';
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = els.sidebar;
+            const overlay = els.sidebarOverlay;
+            
+            if (sidebar.classList.contains('-translate-x-full')) {
+                // Open
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+            } else {
+                // Close
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+            }
+        }
+
+        // Start App
+        init();
+
+    </script>
+</body>
+</html>
+
